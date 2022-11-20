@@ -1,0 +1,10 @@
+
+tema1/.vscode/settings.json
+tema1/Docker/docker-compose.yml
+tema1/Docker/*
+
+tema1/test0/*
+tema1/test1/*
+tema1/test2/*
+tema1/test3/*
+tema1/test4/*
