@@ -1,29 +1,23 @@
 #include <iostream>
-#include <fstream>
-#include <string>
-#include <queue>
-#include <limits.h>
-// #include <bits/stdc++.h>
-#include<unordered_set>
-#include<sstream>
-#include<cmath>
-#include <pthread.h>
+#include <bits/stdc++.h>
 using namespace std;
 
 typedef vector<unordered_set<int>> buffer, *Buffer;
 
 typedef struct gl_var {
-    queue<string> pool;
-    queue<int> ids;
+    queue<string> *pool;
+    queue<int> *ids;
     buffer pp;
     vector<buffer> *buf;
     int R;
+    string path;
 }global,  *Global;
 
 typedef struct gl_r{
-    queue<int> ids;
+    queue<int> *ids;
     vector<buffer> *buf;
     int M;
+    string path;
 }r_global, *R_global;
 
 pthread_mutex_t m;
@@ -50,6 +44,7 @@ int main(int argc, char *argv[]) {
 
     int NUM_THREADS = M + R;
     string inFile = argv[3];
+    string path = inFile.substr(0, inFile.find("/") + 1);
     global arg;
     r_global r_arg;
     buffer pp(R);
@@ -64,11 +59,11 @@ int main(int argc, char *argv[]) {
     pthread_barrier_init(&b, NULL, NUM_THREADS);
     int E = R + 1;
     
-    for(int i = 0; i < M; ++i) {
+    for(int i = 0; i < M; ++i) { //init mapper ids
         m_ids.push(i);
     }
 
-    for(int i = 0; i <  R; ++i) {
+    for(int i = 0; i <  R; ++i) { //init reducers ids
         r_ids.push(i);
     }
 
@@ -79,9 +74,7 @@ int main(int argc, char *argv[]) {
     int nrDoc;
     string x;
 
-    if(file.is_open()) {
-        file >> nrDoc;  
-    }
+    file >> nrDoc;  
 
     //2. read the names of the N files to be processed and put them in a queue (docPool)
     for(int i = 0; i < nrDoc && file.is_open(); i++) {
@@ -100,21 +93,16 @@ int main(int argc, char *argv[]) {
         }
     }
 
-    // cout << isPP(4096, 6, pp) << endl;
-
     //initialise "global var"
-    arg.pool = docPool;
+    arg.pool = &docPool;
     arg.pp = pp;
     arg.buf = r_arg.buf = &buffers;
     arg.R = R;
-    arg.ids = m_ids;
+    arg.ids = &m_ids;
+    arg.path = r_arg.path = path;
 
-    r_arg.ids = r_ids;
+    r_arg.ids = &r_ids;
     r_arg.M = M;
-
-    // printq(arg.pool);
-
-    // cout << M << R << inFile << endl;
 
     // 5. starts the threads
     for(int i = 0; i < NUM_THREADS; ++i) {
@@ -130,10 +118,6 @@ int main(int argc, char *argv[]) {
 		}
     }
 
-    // cout << "am pornit threadurile" << endl; 
-
-    // cout << r_arg.buf.at(0).at(0).size()<<endl;
-
     // 6. wait (join) the threads
     for(int i = 0; i < NUM_THREADS; ++i) {
         r = pthread_join(threads[i], &status);
@@ -143,8 +127,6 @@ int main(int argc, char *argv[]) {
 			exit(-1);
 		}
     }
-    cout << "am facut join la threaduri" << endl; 
-    cout << "(main) buff size: " << (*arg.buf).at(0).at(0).size();
 
     pthread_mutex_destroy(&m);
     pthread_barrier_destroy(&b);
@@ -159,67 +141,46 @@ void *mapper(void *arg) {
     int id;
     int cont;
 
-    cout << "am pornit ~ !" << endl;
+    pthread_mutex_lock(&m);
+    id = (*shared.ids).front();
+    (*shared.ids).pop();
+    pthread_mutex_unlock(&m);
+
 
     while(1) {
         //lock the mutex -> only one thread should read/modify the pool at a time
         pthread_mutex_lock(&m);
-        id = shared.ids.front();
-        shared.ids.pop();
 
-        cont = shared.pool.empty() ? 0 : 1;
-        if(cont) {
-            str = shared.pool.front();
-            shared.pool.pop();
+        cont = (*shared.pool).empty() ? 0 : 1; //go on if there are still docs to be processed
+        if(cont == 1) {
+            str = (*shared.pool).front();
+            (*shared.pool).pop();
+            pthread_mutex_unlock(&m);
         } else {
             pthread_mutex_unlock(&m);
             break;
         }
 
-        pthread_mutex_unlock(&m);
-        //unlock
-
-        // cout << "map id: " << id << endl;
-        cout << "map task: " << str << endl;
-
-
         ifstream inf(str);
 
         int n, aux; // the numbers to be verified
-
         inf >> n;
-        // cout << n << endl;
 
         for(int i = 0; i < n; i++) {
             inf >> aux;
-            // cout << "citit: " << aux << endl;
             if(aux > 0){
                 for(int e = 2; e <= shared.R + 1; ++e) {
-                    cout << "pp buffer size: " << (*shared.buf).at(id).at(e-2).size() << endl;
                     if (isPP(aux, e, shared.pp)) {
-                        // cout << "pp found: " << aux << " ";
                         (*shared.buf).at(id).at(e-2).insert(aux);
-                        cout << "pp new buffer size: " << (*shared.buf).at(id).at(e-2).size() << endl;
                     }
                 }
-                // cout << endl;
             }
-
         }
-
         inf.close();
-
-        pthread_mutex_lock(&m);
-        cont = shared.pool.empty() ? 0 : 1;
-        pthread_mutex_unlock(&m);
-        if(cont == 0) {
-            break;
-        }
     }
 
-    //release the barrier
+    //wait at the barrier
     pthread_barrier_wait(&b);
-
     pthread_exit(NULL);
 }
 
@@ -230,26 +191,21 @@ void *reducer(void *arg) {
     int id;
 
     pthread_mutex_lock(&m);
-    id = shared.ids.front();
-    shared.ids.pop();
+    id = (*shared.ids).front();
+    (*shared.ids).pop();
     pthread_mutex_unlock(&m);
-
-    // cout << "reduce id: " << id << endl;
 
     stringstream ss;
     ss << id + 2;
     name = ss.str();
 
-
-    name = "out" + name + ".txt";
+    name = "myOut" + name + ".txt";
+    name = shared.path + name;
     ofstream out(name);
 
-    cout << name << endl;
-    // out << name << endl;
+    pthread_barrier_wait(&b); // wait for all the mapers to finish
 
-    pthread_barrier_wait(&b);
-
-    for(int e = 1; e < shared.M; ++e) {
+    for(int e = 1; e < shared.M; ++e) { //combine all the partial results from mappers
         (*shared.buf).at(0).at(id).insert((*shared.buf).at(e).at(id).begin(), (*shared.buf).at(e).at(id).end());
     }
 
@@ -257,15 +213,6 @@ void *reducer(void *arg) {
 
     out.close();
     pthread_exit(NULL);
-}
-
-void printq(queue<string> gq) {
-    queue<string> g = gq;
-    while (!g.empty()) {
-        cout << '\t' << g.front();
-        g.pop();
-    }
-    cout << '\n';
 }
 
 bool isPP(int n, int e, buffer pp) {
