@@ -7,7 +7,6 @@ typedef vector<unordered_set<int>> buffer, *Buffer;
 typedef struct gl_var {
     queue<string> *pool;
     queue<int> *ids;
-    buffer pp;
     vector<buffer> *buf;
     int R;
     string path;
@@ -20,13 +19,13 @@ typedef struct gl_r{
     string path;
 }r_global, *R_global;
 
-pthread_mutex_t m;
-pthread_barrier_t b;
-
 void printq(queue<string> gq);
 void *mapper(void *arg);
 void *reducer(void *arg);
-bool isPP(int n, int e, buffer pp);
+bool isPP(int n, int e);
+
+pthread_mutex_t m;
+pthread_barrier_t b;
 
 int main(int argc, char *argv[]) {
     if(argc < 4) {
@@ -47,7 +46,6 @@ int main(int argc, char *argv[]) {
     string path = inFile.substr(0, inFile.find("/") + 1);
     global arg;
     r_global r_arg;
-    buffer pp(R);
     queue<int> m_ids;
     queue<int> r_ids;
     queue<string> docPool;
@@ -57,7 +55,6 @@ int main(int argc, char *argv[]) {
     int r;
     pthread_mutex_init(&m, NULL);
     pthread_barrier_init(&b, NULL, NUM_THREADS);
-    int E = R + 1;
     
     for(int i = 0; i < M; ++i) { //init mapper ids
         m_ids.push(i);
@@ -66,7 +63,6 @@ int main(int argc, char *argv[]) {
     for(int i = 0; i <  R; ++i) { //init reducers ids
         r_ids.push(i);
     }
-
 
     ifstream file(inFile);
 
@@ -85,17 +81,8 @@ int main(int argc, char *argv[]) {
     //3. close the file
     file.close();
 
-    //4. pre-generate the pp for each exponent
-    for(int e = 2; e <= E; ++e) {
-        int limit = pow(INT_MAX, 1.0/e);
-        for(int k = 1; k <= limit; k++) {
-            pp.at(e-2).insert((int)pow(k,e));
-        }
-    }
-
-    //initialise "global var"
+    //initialise structure for "global variable"
     arg.pool = &docPool;
-    arg.pp = pp;
     arg.buf = r_arg.buf = &buffers;
     arg.R = R;
     arg.ids = &m_ids;
@@ -130,7 +117,6 @@ int main(int argc, char *argv[]) {
 
     pthread_mutex_destroy(&m);
     pthread_barrier_destroy(&b);
-
     return 0;
 }
 
@@ -145,7 +131,6 @@ void *mapper(void *arg) {
     id = (*shared.ids).front();
     (*shared.ids).pop();
     pthread_mutex_unlock(&m);
-
 
     while(1) {
         //lock the mutex -> only one thread should read/modify the pool at a time
@@ -170,7 +155,7 @@ void *mapper(void *arg) {
             inf >> aux;
             if(aux > 0){
                 for(int e = 2; e <= shared.R + 1; ++e) {
-                    if (isPP(aux, e, shared.pp)) {
+                    if (isPP(aux, e)) {
                         (*shared.buf).at(id).at(e-2).insert(aux);
                     }
                 }
@@ -199,26 +184,27 @@ void *reducer(void *arg) {
     ss << id + 2;
     name = ss.str();
 
-    name = "myOut" + name + ".txt";
-    name = shared.path + name;
+    name = "out" + name + ".txt";
     ofstream out(name);
 
     pthread_barrier_wait(&b); // wait for all the mapers to finish
 
-    for(int e = 1; e < shared.M; ++e) { //combine all the partial results from mappers
+    //combine all the partial results from mappers
+    for(int e = 1; e < shared.M; ++e) { 
         (*shared.buf).at(0).at(id).insert((*shared.buf).at(e).at(id).begin(), (*shared.buf).at(e).at(id).end());
     }
 
+    //print the output
     out << (*shared.buf).at(0).at(id).size();
 
     out.close();
     pthread_exit(NULL);
 }
 
-bool isPP(int n, int e, buffer pp) {
-    if(pp.at(e-2).find(n) == pp.at(e-2).end()) {
-        return false;
+bool isPP(int n, int e) {
+    int x = pow(n, 1.0 / e);
+    if(pow(x,e) == n || pow(x + 1, e) == n) {
+        return true;
     }
-
-    return true;
+    return false;
 }
