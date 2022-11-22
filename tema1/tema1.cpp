@@ -2,6 +2,12 @@
 #include <bits/stdc++.h>
 using namespace std;
 
+void printq(queue<string> gq);
+void *mapper(void *arg);
+void *reducer(void *arg);
+bool isPP(int n, int e);
+bool isPP2(int n, int e);
+
 typedef vector<unordered_set<int>> buffer, *Buffer;
 
 typedef struct gl_var {
@@ -18,11 +24,6 @@ typedef struct gl_r{
     int M;
     string path;
 }r_global, *R_global;
-
-void printq(queue<string> gq);
-void *mapper(void *arg);
-void *reducer(void *arg);
-bool isPP(int n, int e);
 
 pthread_mutex_t m;
 pthread_barrier_t b;
@@ -155,7 +156,7 @@ void *mapper(void *arg) {
             inf >> aux;
             if(aux > 0){
                 for(int e = 2; e <= shared.R + 1; ++e) {
-                    if (isPP(aux, e)) {
+                    if (isPP2(aux, e)) {
                         (*shared.buf).at(id).at(e-2).insert(aux);
                     }
                 }
@@ -206,5 +207,28 @@ bool isPP(int n, int e) {
     if(pow(x,e) == n || pow(x + 1, e) == n) {
         return true;
     }
+    return false;
+}
+
+bool isPP2(int n, int e) {
+    int st = 1;
+    int dr = sqrt(n);
+    int mid;
+    long p;
+
+    while(st <= dr) {
+        mid = (st + dr) / 2;
+        p = (long) pow(mid, e);
+        if(p == n) {
+            return true;
+        } 
+
+        if(p > n) {  // go left
+            dr = mid - 1;
+        } else {
+            st = mid + 1;
+        }
+    }
+
     return false;
 }
